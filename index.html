@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ERIC.LOG DAILY</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0c0c0d">
+  <meta name="mobile-web-app-capable" content="yes">
+  
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ERIC.LOG">
+  <link rel="apple-touch-icon" href="icon.svg">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Noto Sans TC"', 'sans-serif'],
+            mono: ['SF Pro Text', 'ui-monospace', 'Menlo', 'monospace']
+          },
+          colors: {
+            neutral: {
+              950: '#0c0c0d',
+              900: '#141416',
+              850: '#1a1a1d',
+              800: '#222226',
+              700: '#323238',
+              650: '#484852',
+              400: '#8e8e98',
+              300: '#b4b4bd',
+              200: '#dedee3'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      padding-top: max(1.5rem, env(safe-area-inset-top));
+      padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+      -webkit-touch-callout: none;
+    }
+    textarea:focus, input:focus { outline: none; }
+    .custom-scroll::-webkit-scrollbar { width: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 2px; }
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-200 min-h-screen font-sans antialiased flex justify-center selection:bg-neutral-800">
+
+  <div class="w-full max-w-4xl flex flex-col gap-6 md:gap-8">
+    <header class="border-b border-neutral-800 pb-5 flex flex-wrap justify-between items-baseline gap-4">
+      <div>
+        <div class="text-[11px] font-mono tracking-[0.25em] text-neutral-400 uppercase">Observer Journal</div>
+        <h1 class="text-2xl font-light tracking-wide text-neutral-100 mt-1 font-mono">ERIC.LOG DAILY</h1>
+      </div>
+      <div class="flex items-center gap-4 md:gap-6">
+        <div class="text-xs font-mono text-neutral-400" id="currentDateDisplay">----.--.--</div>
+        <div class="text-xs font-mono px-2.5 py-1 bg-neutral-900 border border-neutral-800 rounded">
+          STATUS: <span id="progressPercent" class="text-neutral-200">0%</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <section class="lg:col-span-7 flex flex-col gap-4">
+        <div class="flex items-center justify-between text-xs font-mono text-neutral-400 tracking-wider uppercase mb-1">
+          <span>01 / Daily Checkpoints</span>
+          <span id="checkedCount">0 / 10 COMPLETED</span>
+        </div>
+        <div id="checkpointsContainer" class="flex flex-col gap-2.5"></div>
+      </section>
+
+      <section class="lg:col-span-5 flex flex-col gap-6">
+        <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono text-neutral-400 tracking-wider uppercase">02 / 臨時任務與即時備忘</span>
+            <span class="text-[11px] font-mono text-neutral-500" id="activeTaskCount">0 待辦</span>
+          </div>
+
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              id="newTaskInput" 
+              placeholder="輸入臨時交辦、突發想法..." 
+              class="w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:border-neutral-500 transition-colors"
+            />
+            <button 
+              id="addTaskBtn" 
+              class="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-600 text-neutral-200 text-xs font-mono rounded transition-colors whitespace-nowrap"
+            >
+              + 新增
+            </button>
+          </div>
+
+          <div id="taskList" class="flex flex-col gap-2 max-h-[340px] overflow-y-auto custom-scroll pr-1">
+            <div id="emptyTaskPlaceholder" class="text-xs text-neutral-600 italic py-4 text-center">
+              尚無臨時任務
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <button 
+            id="copyMarkdownBtn" 
+            class="w-full py-2.5 bg-neutral-900 hover:bg-neutral-850 active:bg-neutral-800 border border-neutral-700 text-xs font-mono tracking-wider text-neutral-200 rounded transition-all flex items-center justify-center gap-2"
+          >
+            <span>複製今日記錄 (MARKDOWN)</span>
+          </button>
+          <button 
+            id="resetDayBtn" 
+            class="w-full py-2 text-[11px] font-mono text-neutral-500 hover:text-red-400 transition-colors text-center"
+          >
+            清空當前紀錄重置
+          </button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(console.error);
+      });
+    }
+
+    const CORE_ITEMS = [
+      { id: 'start_state', label: '今天開始前的我', placeholder: '早晨的身心狀態、出門時的微小念頭...' },
+      { id: 'location', label: '今天在哪裡', placeholder: '辦公室、基地現場、某個咖啡角、高鐵途中...' },
+      { id: 'doing', label: '今天在做什麼', placeholder: '今日的核心事件或推動的企劃焦點...' },
+      { id: 'work_details', label: '3 個工作細節', placeholder: '1. \n2. \n3. ' },
+      { id: 'working_scene', label: '一個「我本人在工作」的畫面', placeholder: '如第三人視角抽離看到的定格光景...' },
+      { id: 'ambient_sound', label: '一個環境聲', placeholder: '鍵盤敲擊、空調低頻、某段對話殘響、雨聲...' },
+      { id: 'first_reaction', label: '事情結束後的第一反應', placeholder: '收拾電腦闔上螢幕那一刻真實浮現的情緒...' },
+      { id: 'quote', label: '今天有沒有一句值得留下的話', placeholder: '會議上的字句、聽到的話、或心裡的旁白...' },
+      { id: 'countdown_feeling', label: '今天有沒有「離職倒數」的感覺', placeholder: '敏銳觀察邊界感、抽離感或純粹專注...' },
+      { id: 'night_log', label: '晚上要不要補一段', placeholder: '深夜獨處時的留白回望...' }
+    ];
+
+    let state = { core: {}, tasks: [] };
+    CORE_ITEMS.forEach(item => { state.core[item.id] = { checked: false, note: '' }; });
+
+    const STORAGE_KEY = 'ERIC_LOG_DAILY_DATA';
+
+    function loadSavedData() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.core) state.core = { ...state.core, ...parsed.core };
+          if (parsed.tasks) state.tasks = parsed.tasks;
+        } catch (e) {}
+      }
+    }
+
+    function persistData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function renderDate() {
+      const now = new Date();
+      const yr = now.getFullYear();
+      const mo = String(now.getMonth() + 1).padStart(2, '0');
+      const da = String(now.getDate()).padStart(2, '0');
+      const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      document.getElementById('currentDateDisplay').textContent = `${yr}.${mo}.${da} [${days[now.getDay()]}]`;
+    }
+
+    function updateProgress() {
+      const total = CORE_ITEMS.length;
+      const checked = Object.values(state.core).filter(item => item.checked).length;
+      const pct = Math.round((checked / total) * 100);
+      document.getElementById('progressPercent').textContent = `${pct}%`;
+      document.getElementById('checkedCount').textContent = `${checked} / ${total} COMPLETED`;
+    }
+
+    function renderCoreItems() {
+      const container = document.getElementById('checkpointsContainer');
+      container.innerHTML = '';
+
+      CORE_ITEMS.forEach((item, index) => {
+        const data = state.core[item.id] || { checked: false, note: '' };
+        const wrapper = document.createElement('div');
+        wrapper.className = `border rounded-lg p-3 transition-colors ${
+          data.checked ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-950 border-neutral-850'
+        }`;
+
+        wrapper.innerHTML = `
+          <div class="flex items-start gap-3">
+            <button 
+              type="button" 
+              class="toggle-check mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                data.checked ? 'bg-neutral-200 border-neutral-200 text-neutral-950' : 'border-neutral-700 bg-neutral-900 hover:border-neutral-500'
+              }"
+              data-id="${item.id}"
+            >
+              ${data.checked ? '<svg class="w-3 h-3 fill-current" viewBox="0 0 20 20"><path d="M0 11l2-2 5 5L18 3l2 2L7 18z"/></svg>' : ''}
+            </button>
+            <div class="flex-1 min-w-0">
+              <div class="flex justify-between items-center mb-1.5">
+                <span class="text-xs font-medium tracking-wide ${data.checked ? 'text-neutral-400 line-through' : 'text-neutral-200'}">
+                  ${item.label}
+                </span>
+                <span class="text-[10px] font-mono text-neutral-600">0${index + 1}</span>
+              </div>
+              <textarea 
+                data-id="${item.id}"
+                placeholder="${item.placeholder}" 
+                rows="${item.id === 'work_details' ? '3' : '2'}"
+                class="note-input w-full bg-neutral-900/50 border border-neutral-800/80 rounded px-2.5 py-1.5 text-xs text-neutral-300 placeholder-neutral-650 resize-y focus:border-neutral-600 focus:bg-neutral-900 transition-colors"
+              >${data.note || ''}</textarea>
+            </div>
+          </div>
+        `;
+        container.appendChild(wrapper);
+      });
+
+      container.querySelectorAll('.toggle-check').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          state.core[id].checked = !state.core[id].checked;
+          persistData();
+          renderCoreItems();
+          updateProgress();
+        });
+      });
+
+      container.querySelectorAll('.note-input').forEach(ta => {
+        ta.addEventListener('input', (e) => {
+          const id = e.currentTarget.dataset.id;
+          state.core[id].note = e.target.value;
+          persistData();
+        });
+      });
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('taskList');
+      container.innerHTML = '';
+      const pendingCount = state.tasks.filter(t => !t.done).length;
+      document.getElementById('activeTaskCount').textContent = `${pendingCount} 待辦`;
+
+      if (state.tasks.length === 0) {
+        container.innerHTML = `<div class="text-xs text-neutral-600 italic py-4 text-center">尚無臨時任務</div>`;
+        return;
+      }
+
+      state.tasks.forEach((t, i) => {
+        const el = document.createElement('div');
+        el.className = 'group flex items-center justify-between gap-2 p-2 rounded bg-neutral-950 border border-neutral-850 text-xs';
+        el.innerHTML = `
+          <div class="flex items-center gap-2.5 min-w-0">
+            <input 
+              type="checkbox" 
+              ${t.done ? 'checked' : ''} 
+              class="task-toggle rounded bg-neutral-900 border-neutral-700 text-neutral-200 accent-neutral-300 w-3.5 h-3.5 cursor-pointer"
+              data-index="${i}"
+            />
+            <span class="truncate ${t.done ? 'text-neutral-600 line-through' : 'text-neutral-300'}">${t.text}</span>
+          </div>
+          <button class="delete-task text-[11px] font-mono text-neutral-600 hover:text-neutral-400 px-1 opacity-0 group-hover:opacity-100 transition-opacity" data-index="${i}">
+            ✕
+          </button>
+        `;
+        container.appendChild(el);
+      });
+
+      container.querySelectorAll('.task-toggle').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+          const idx = parseInt(e.target.dataset.index, 10);
+          state.tasks[idx].done = e.target.checked;
+          persistData();
+          renderTasks();
+        });
+      });
+
+      container.querySelectorAll('.delete-task').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.currentTarget.dataset.index, 10);
+          state.tasks.splice(idx, 1);
+          persistData();
+          renderTasks();
+        });
+      });
+    }
+
+    function initTaskInput() {
+      const input = document.getElementById('newTaskInput');
+      const addBtn = document.getElementById('addTaskBtn');
+      const handleAdd = () => {
+        const val = input.value.trim();
+        if (!val) return;
+        state.tasks.unshift({ text: val, done: false, created: Date.now() });
+        input.value = '';
+        persistData();
+        renderTasks();
+      };
+      addBtn.addEventListener('click', handleAdd);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAdd(); });
+    }
+
+    function initMarkdownExport() {
+      const btn = document.getElementById('copyMarkdownBtn');
+      btn.addEventListener('click', () => {
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10);
+        let md = `# ERIC.LOG DAILY - ${dateStr}\n\n## 每日檢核點\n`;
+        CORE_ITEMS.forEach(item => {
+          const c = state.core[item.id];
+          md += `- ${c.checked ? '[x]' : '[ ]'} **${item.label}**\n`;
+          if (c.note && c.note.trim()) {
+            md += c.note.split('\n').map(l => `  > ${l}`).join('\n') + '\n';
+          }
+        });
+        if (state.tasks.length > 0) {
+          md += `\n## 臨時任務\n`;
+          state.tasks.forEach(t => {
+            md += `- ${t.done ? '[x]' : '[ ]'} ${t.text}\n`;
+          });
+        }
+        navigator.clipboard.writeText(md).then(() => {
+          const orig = btn.innerHTML;
+          btn.innerHTML = `<span class="text-neutral-400">✓ 已複製至剪貼簿</span>`;
+          setTimeout(() => { btn.innerHTML = orig; }, 2000);
+        });
+      });
+    }
+
+    function initReset() {
+      document.getElementById('resetDayBtn').addEventListener('click', () => {
+        if (confirm('確定清空今日所有輸入內容與勾選嗎？')) {
+          CORE_ITEMS.forEach(item => { state.core[item.id] = { checked: false, note: '' }; });
+          state.tasks = [];
+          persistData();
+          renderCoreItems();
+          renderTasks();
+          updateProgress();
+        }
+      });
+    }
+
+    loadSavedData();
+    renderDate();
+    renderCoreItems();
+    renderTasks();
+    updateProgress();
+    initTaskInput();
+    initMarkdownExport();
+    initReset();
+  </script>
+</body>
+</html>
